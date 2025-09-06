@@ -7,7 +7,11 @@ import pickle
 from sklearn.ensemble import IsolationForest
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import StandardScaler
-import faiss
+try:
+    import faiss
+    FAISS_AVAILABLE = True
+except ImportError:
+    FAISS_AVAILABLE = False
 
 from src.utils.logging import setup_logger
 
@@ -388,6 +392,7 @@ class EmbeddingIndex:
         self.family_labels = []
         self.feature_names = []
         self.scaler = StandardScaler()
+        self.faiss_available = FAISS_AVAILABLE
         
         self._load_index()
     
@@ -420,6 +425,9 @@ class EmbeddingIndex:
     def find_matches(self, features: Dict[str, float], k: int = 5) -> Dict[str, Any]:
         """Find similar samples using FAISS"""
         try:
+            if not self.faiss_available:
+                return {"method": "embedding_faiss", "matches": [], "note": "FAISS not available"}
+                
             if self.index is None or len(self.family_labels) == 0:
                 return {"method": "embedding_faiss", "matches": [], "note": "Empty index"}
             
@@ -453,6 +461,9 @@ class EmbeddingIndex:
     def add_sample(self, family_name: str, features: Dict[str, float]):
         """Add new sample to the index"""
         try:
+            if not self.faiss_available:
+                return False
+                
             # Convert features to vector
             if not self.feature_names:
                 self.feature_names = sorted(features.keys())

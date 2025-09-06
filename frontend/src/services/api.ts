@@ -21,9 +21,19 @@ export const getDetailedHealth = async () => {
 };
 
 // Analysis endpoints
-export const analyzeImage = async (file: File) => {
+export const analyzeImage = async (file: File, options: any = {}) => {
   const formData = new FormData();
   formData.append('file', file);
+  
+  // Add analysis options as query parameters
+  const params = new URLSearchParams();
+  if (options.stripExif !== undefined) params.append('strip_exif', options.stripExif.toString());
+  if (options.enableLearning !== undefined) params.append('enable_learning', options.enableLearning.toString());
+  if (options.generateReport !== undefined) params.append('generate_report', options.generateReport.toString());
+  if (options.targetLayer) params.append('target_layer', options.targetLayer);
+  
+  const queryString = params.toString();
+  const url = queryString ? `/analyze?${queryString}` : '/analyze';
   
   const response = await api.post('/analyze', formData, {
     headers: {
@@ -46,6 +56,27 @@ export const analyzeBatch = async (files: File[]) => {
     },
   });
   
+  return response.data;
+};
+
+// Self-learning endpoints
+export const processConsent = async (candidateId: string, userId: string, consentGiven: boolean, humanLabel?: string) => {
+  const response = await api.post('/analyze/consent', {
+    candidate_id: candidateId,
+    user_id: userId,
+    consent_given: consentGiven,
+    human_label: humanLabel
+  });
+  return response.data;
+};
+
+export const getLearningStats = async () => {
+  const response = await api.get('/analyze/learning/stats');
+  return response.data;
+};
+
+export const cleanupLearningData = async () => {
+  const response = await api.post('/analyze/learning/cleanup');
   return response.data;
 };
 

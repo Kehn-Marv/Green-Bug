@@ -10,3 +10,6 @@ torchvision
 facenet-pytorch
 python-multipart
 psutil
+reportlab
+mahotas
+pywavelets

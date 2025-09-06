@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Image as ImageIcon, AlertCircle, CheckCircle, Download, Eye, Database } from 'lucide-react';
+import { Upload, Image as ImageIcon, AlertCircle, CheckCircle, Download, Eye, Database, FileText, Brain, Shield, Zap } from 'lucide-react';
 import { analyzeImage } from '../services/api';
 import LoadingSpinner from './LoadingSpinner';
 import ResultCard from './ResultCard';
@@ -26,6 +26,23 @@ interface AnalysisResult {
     family: string;
     similarity: number;
   }>;
+  attribution: {
+    predicted_family: string;
+    confidence: number;
+    ensemble: any;
+  };
+  robustness: {
+    overall_robustness: number;
+    stability_metrics: any;
+    provenance_stability: any;
+  };
+  learning_evaluation?: {
+    selected: boolean;
+    candidate_id?: string;
+    scores?: any;
+  };
+  comprehensive_features: any;
+  forensic_reports?: any;
   files: {
     heatmap_url: string;
     overlay_url: string;
@@ -41,6 +58,12 @@ const AnalyzeSection: React.FC = () => {
   const [dragOver, setDragOver] = useState(false);
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [viewerImage, setViewerImage] = useState<{ url: string; title: string } | null>(null);
+  const [analysisOptions, setAnalysisOptions] = useState({
+    stripExif: true,
+    enableLearning: true,
+    generateReport: false,
+    targetLayer: 'layer4.1.conv2'
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (file: File) => {
@@ -69,7 +92,7 @@ const AnalyzeSection: React.FC = () => {
     setError(null);
 
     try {
-      const analysisResult = await analyzeImage(selectedFile);
+      const analysisResult = await analyzeImage(selectedFile, analysisOptions);
       setResult(analysisResult);
     } catch (err: any) {
       setError(err.message || 'Analysis failed. Please try again.');
@@ -116,7 +139,57 @@ const AnalyzeSection: React.FC = () => {
     <div className="space-y-6">
       <div className="text-center">
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Single Image Analysis</h2>
-        <p className="text-gray-600">Upload an image to detect potential deepfake manipulation</p>
+        <p className="text-gray-600">Comprehensive deepfake detection with forensic analysis, attribution, and robustness testing</p>
+      </div>
+
+      {/* Analysis Options */}
+      <div className="card">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Analysis Options</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-3">
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={analysisOptions.stripExif}
+                onChange={(e) => setAnalysisOptions(prev => ({ ...prev, stripExif: e.target.checked }))}
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              <span className="text-sm text-gray-700">Strip EXIF metadata</span>
+            </label>
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={analysisOptions.enableLearning}
+                onChange={(e) => setAnalysisOptions(prev => ({ ...prev, enableLearning: e.target.checked }))}
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              <span className="text-sm text-gray-700">Enable self-learning evaluation</span>
+            </label>
+          </div>
+          <div className="space-y-3">
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={analysisOptions.generateReport}
+                onChange={(e) => setAnalysisOptions(prev => ({ ...prev, generateReport: e.target.checked }))}
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              <span className="text-sm text-gray-700">Generate forensic report</span>
+            </label>
+            <div>
+              <label className="block text-sm text-gray-700 mb-1">Target Layer for Grad-CAM</label>
+              <select
+                value={analysisOptions.targetLayer}
+                onChange={(e) => setAnalysisOptions(prev => ({ ...prev, targetLayer: e.target.value }))}
+                className="w-full px-3 py-1 border border-gray-300 rounded-md text-sm"
+              >
+                <option value="layer4.1.conv2">layer4.1.conv2</option>
+                <option value="layer3.1.conv2">layer3.1.conv2</option>
+                <option value="layer2.1.conv2">layer2.1.conv2</option>
+              </select>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* File Upload */}
@@ -196,9 +269,9 @@ const AnalyzeSection: React.FC = () => {
       {/* Results */}
       {result && (
         <div className="space-y-6">
-          {/* Main Results */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Scores */}
+          {/* Enhanced Main Results */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Detection Scores */}
             <ResultCard title="Detection Scores" icon={AlertCircle}>
               <div className="space-y-4">
                 <div>
@@ -247,6 +320,62 @@ const AnalyzeSection: React.FC = () => {
               </div>
             </ResultCard>
 
+            {/* Attribution Analysis */}
+            <ResultCard title="Attribution Analysis" icon={Brain}>
+              <div className="space-y-3">
+                {result.attribution && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600">Predicted Family</span>
+                      <span className="text-sm font-medium text-gray-900 capitalize">
+                        {result.attribution.predicted_family.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600">Confidence</span>
+                      <span className="text-sm font-medium text-gray-900">
+                        {(result.attribution.confidence * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-primary-500 h-2 rounded-full"
+                        style={{ width: `${result.attribution.confidence * 100}%` }}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            </ResultCard>
+
+            {/* Robustness Analysis */}
+            <ResultCard title="Robustness Analysis" icon={Shield}>
+              <div className="space-y-3">
+                {result.robustness && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600">Overall Robustness</span>
+                      <span className="text-sm font-medium text-gray-900">
+                        {(result.robustness.overall_robustness * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-success-500 h-2 rounded-full"
+                        style={{ width: `${result.robustness.overall_robustness * 100}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Stability against manipulations
+                    </p>
+                  </>
+                )}
+              </div>
+            </ResultCard>
+          </div>
+
+          {/* Main Results */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Face Detection */}
             <ResultCard title="Face Detection" icon={result.face.found ? CheckCircle : AlertCircle}>
               <div className="space-y-3">
@@ -274,11 +403,46 @@ const AnalyzeSection: React.FC = () => {
                 )}
               </div>
             </ResultCard>
+
+            {/* Self-Learning Evaluation */}
+            {result.learning_evaluation && (
+              <ResultCard title="Self-Learning Evaluation" icon={Zap}>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Learning Candidate</span>
+                    <span className={`text-sm font-medium ${result.learning_evaluation.selected ? 'text-success-600' : 'text-gray-500'}`}>
+                      {result.learning_evaluation.selected ? 'Selected' : 'Not Selected'}
+                    </span>
+                  </div>
+                  {result.learning_evaluation.selected && result.learning_evaluation.candidate_id && (
+                    <div className="text-xs text-gray-500">
+                      Candidate ID: {result.learning_evaluation.candidate_id}
+                    </div>
+                  )}
+                  {result.learning_evaluation.scores && (
+                    <div className="space-y-1 text-xs">
+                      <div className="flex justify-between">
+                        <span>Uncertainty:</span>
+                        <span>{(result.learning_evaluation.scores.uncertainty * 100).toFixed(1)}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Diversity:</span>
+                        <span>{(result.learning_evaluation.scores.diversity * 100).toFixed(1)}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Quality:</span>
+                        <span>{(result.learning_evaluation.scores.quality * 100).toFixed(1)}%</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </ResultCard>
+            )}
           </div>
 
-          {/* Attribution Results */}
-          {result.attribution_topk.length > 0 && (
-            <ResultCard title="Attribution Analysis" icon={Database}>
+          {/* Legacy Attribution Results */}
+          {result.attribution_topk && result.attribution_topk.length > 0 && (
+            <ResultCard title="Legacy Attribution Analysis" icon={Database}>
               <div className="space-y-3">
                 {result.attribution_topk.map((attr, index) => (
                   <div key={index} className="flex items-center justify-between">
@@ -298,6 +462,50 @@ const AnalyzeSection: React.FC = () => {
                     </div>
                   </div>
                 ))}
+              </div>
+            </ResultCard>
+          )}
+
+          {/* Forensic Reports */}
+          {result.forensic_reports && (
+            <ResultCard title="Forensic Reports" icon={FileText}>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {result.forensic_reports.json && (
+                  <div className="text-center">
+                    <FileText className="w-8 h-8 text-primary-600 mx-auto mb-2" />
+                    <p className="text-sm font-medium text-gray-900">Technical Report (JSON)</p>
+                    <button
+                      onClick={() => window.open(`/api/files/${result.forensic_reports.json.split('/').pop()}`, '_blank')}
+                      className="btn-secondary mt-2 w-full"
+                    >
+                      Download
+                    </button>
+                  </div>
+                )}
+                {result.forensic_reports.html && (
+                  <div className="text-center">
+                    <FileText className="w-8 h-8 text-success-600 mx-auto mb-2" />
+                    <p className="text-sm font-medium text-gray-900">Web Report (HTML)</p>
+                    <button
+                      onClick={() => window.open(`/api/files/${result.forensic_reports.html.split('/').pop()}`, '_blank')}
+                      className="btn-secondary mt-2 w-full"
+                    >
+                      View
+                    </button>
+                  </div>
+                )}
+                {result.forensic_reports.pdf && (
+                  <div className="text-center">
+                    <FileText className="w-8 h-8 text-danger-600 mx-auto mb-2" />
+                    <p className="text-sm font-medium text-gray-900">Forensic Report (PDF)</p>
+                    <button
+                      onClick={() => window.open(`/api/files/${result.forensic_reports.pdf.split('/').pop()}`, '_blank')}
+                      className="btn-secondary mt-2 w-full"
+                    >
+                      Download
+                    </button>
+                  </div>
+                )}
               </div>
             </ResultCard>
           )}
@@ -366,19 +574,74 @@ const AnalyzeSection: React.FC = () => {
           {/* Technical Details */}
           <details className="card">
             <summary className="cursor-pointer font-medium text-gray-900 mb-4">
-              Technical Details & Features
+              Comprehensive Technical Details & Features
             </summary>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              {Object.entries(result.features).map(([key, value]) => (
-                <div key={key} className="space-y-1">
-                  <span className="text-gray-600 capitalize">
-                    {key.replace(/_/g, ' ')}
-                  </span>
-                  <p className="font-medium text-gray-900">
-                    {typeof value === 'number' ? value.toFixed(3) : value}
-                  </p>
+            <div className="space-y-6">
+              {/* Legacy Features */}
+              <div>
+                <h4 className="font-medium text-gray-900 mb-3">Legacy Heuristic Features</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  {Object.entries(result.features).map(([key, value]) => (
+                    <div key={key} className="space-y-1">
+                      <span className="text-gray-600 capitalize">
+                        {key.replace(/_/g, ' ')}
+                      </span>
+                      <p className="font-medium text-gray-900">
+                        {typeof value === 'number' ? value.toFixed(3) : value}
+                      </p>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
+
+              {/* Comprehensive Features */}
+              {result.comprehensive_features && (
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-3">Comprehensive Forensic Features</h4>
+                  <div className="space-y-4">
+                    {Object.entries(result.comprehensive_features).map(([category, features]) => (
+                      <div key={category} className="border border-gray-200 rounded-lg p-4">
+                        <h5 className="font-medium text-gray-800 mb-2 capitalize">
+                          {category.replace(/_/g, ' ')} Features
+                        </h5>
+                        {typeof features === 'object' && features !== null && (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                            {Object.entries(features).slice(0, 12).map(([key, value]) => (
+                              <div key={key} className="space-y-1">
+                                <span className="text-gray-600">
+                                  {key.replace(/_/g, ' ')}
+                                </span>
+                                <p className="font-medium text-gray-900">
+                                  {typeof value === 'number' ? value.toFixed(3) : String(value)}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Processing Metadata */}
+              {result.processing_metadata && (
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-3">Processing Metadata</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    {Object.entries(result.processing_metadata).map(([key, value]) => (
+                      <div key={key} className="space-y-1">
+                        <span className="text-gray-600 capitalize">
+                          {key.replace(/_/g, ' ')}
+                        </span>
+                        <p className="font-medium text-gray-900 break-all">
+                          {typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </details>
         </div>
