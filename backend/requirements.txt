@@ -13,3 +13,7 @@ psutil
 reportlab
 mahotas
 pywavelets
+opencv-python
+redis>=4.6.0
+pytest-asyncio
+transformers>=4.0.0

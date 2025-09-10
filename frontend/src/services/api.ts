@@ -6,7 +6,8 @@ const API_BASE_URL = '/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000, // 30 seconds timeout for analysis
+  // Keep a sensible default for general requests but allow longer requests
+  timeout: 30000, // 30 seconds default timeout
 });
 
 // Health endpoints
@@ -34,13 +35,18 @@ export const analyzeImage = async (file: File, options: any = {}) => {
   
   const queryString = params.toString();
   const url = queryString ? `/analyze?${queryString}` : '/analyze';
-  
-  const response = await api.post('/analyze', formData, {
+
+  // Include query params in the request URL so backend receives options
+  // analysis can be long running; allow override timeout via options.timeout (ms)
+  const requestTimeout = typeof options.timeout === 'number' ? options.timeout : 120000; // default 120s
+
+  const response = await api.post(url, formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
+    timeout: requestTimeout,
   });
-  
+
   return response.data;
 };
 
@@ -57,6 +63,78 @@ export const analyzeBatch = async (files: File[]) => {
   });
   
   return response.data;
+};
+
+// Job-based analysis (submit & poll)
+export const submitAnalyze = async (file: File, options: any = {}) => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const params = new URLSearchParams();
+  if (options.stripExif !== undefined) params.append('strip_exif', options.stripExif.toString());
+  if (options.enableLearning !== undefined) params.append('enable_learning', options.enableLearning.toString());
+  if (options.generateReport !== undefined) params.append('generate_report', options.generateReport.toString());
+  if (options.targetLayer) params.append('target_layer', options.targetLayer);
+
+  const queryString = params.toString();
+  const url = queryString ? `/analyze/submit?${queryString}` : '/analyze/submit';
+
+  const response = await api.post(url, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 10000 // quick acknowledgement
+  });
+
+  return response.data as { job_id: string; estimated_seconds?: number };
+};
+
+export const getAnalyzeResult = async (jobId: string) => {
+  const response = await api.get(`/analyze/result/${jobId}`);
+  return response.data as { job_id: string; status: string; result?: any; error?: any };
+};
+
+// SSE helper to open EventSource for job progress
+export const openAnalyzeEvents = (jobId: string, onMessage: (data: any) => void, onOpen?: () => void, onClose?: () => void) => {
+  const url = `${api.defaults.baseURL}/analyze/events/${jobId}`;
+
+  let es: EventSource | null = null;
+  let closed = false;
+  let attempt = 0;
+
+  const connect = () => {
+    if (closed) return;
+    es = new EventSource(url);
+    es.onopen = () => {
+      attempt = 0;
+      onOpen && onOpen();
+    };
+    es.onmessage = (e: MessageEvent) => {
+      try {
+        onMessage(JSON.parse(e.data));
+      } catch (err) {
+        // ignore parse errors
+      }
+    };
+    es.onerror = () => {
+      // Close current and try reconnect with backoff
+      try { es?.close(); } catch (e) {}
+      es = null;
+      if (closed) return;
+      // backoff
+      attempt += 1;
+      const backoff = Math.min(30000, 500 * Math.pow(2, attempt));
+      setTimeout(() => connect(), backoff);
+    };
+  };
+
+  connect();
+
+  return {
+    close: () => {
+      closed = true;
+      try { es?.close(); } catch (e) {}
+      onClose && onClose();
+    }
+  };
 };
 
 // Self-learning endpoints

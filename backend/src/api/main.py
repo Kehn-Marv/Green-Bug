@@ -16,21 +16,20 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     logger.info("Starting Remorph API...")
-    
+
     try:
         # Validate configuration
         validate_config()
         logger.info("Configuration validation passed")
-        
+
         # Ensure output directory exists early so other components can write to it
         try:
             os.makedirs(OUTPUT_DIR, exist_ok=True)
             logger.info(f"Output directory ready: {OUTPUT_DIR}")
         except Exception as e:
             logger.warning(f"Could not create output directory '{OUTPUT_DIR}' at startup: {e}")
-        
+
         # Initialize face detector (singleton)
-        from src.models.face_detector import face_detector
         logger.info("Face detector initialized")
 
         logger.info("Remorph API startup complete")
@@ -38,9 +37,9 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Startup failed: {e}")
         raise
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down Remorph API...")
 

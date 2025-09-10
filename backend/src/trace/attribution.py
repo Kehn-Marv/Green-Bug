@@ -1,6 +1,7 @@
 import json
 import math
 import os
+from datetime import datetime
 from typing import Dict, List, Tuple, Any
 from src.utils.logging import setup_logger
 
@@ -8,10 +9,11 @@ logger = setup_logger(__name__)
 
 class AttributionIndex:
     """Enhanced attribution index with better error handling and persistence"""
-    
+
     def __init__(self, path: str):
         self.path = path
-        self.db = {"version": 1, "families": []}
+        # Strongly type the in-memory DB to help static checkers
+        self.db: Dict[str, Any] = {"version": 1, "families": []}
         self._load()
 
     def _load(self):
@@ -96,41 +98,41 @@ class AttributionIndex:
         if not feats:
             logger.warning("No features provided for attribution matching")
             return []
-        
+
         results = []
-        
+
         for family in self.db.get("families", []):
             try:
                 family_features = family.get("features_mean", {})
-                
+
                 # Find overlapping feature keys
                 common_keys = [k for k in family_features.keys() if k in feats]
-                
+
                 if not common_keys:
                     logger.debug(f"No common features with family {family['name']}")
                     continue
-                
+
                 # Calculate cosine similarity
                 query_vector = [feats[k] for k in common_keys]
                 family_vector = [family_features[k] for k in common_keys]
-                
+
                 dot_product = sum(x * y for x, y in zip(query_vector, family_vector))
                 norm_query = math.sqrt(sum(x * x for x in query_vector)) + 1e-8
                 norm_family = math.sqrt(sum(y * y for y in family_vector)) + 1e-8
-                
+
                 similarity = dot_product / (norm_query * norm_family)
                 results.append((family["name"], float(similarity)))
-                
+
             except Exception as e:
                 logger.error(f"Error matching family {family.get('name', 'unknown')}: {e}")
                 continue
-        
+
         # Sort by similarity (highest first) and return top-k
         results.sort(key=lambda x: x[1], reverse=True)
         top_results = results[:topk]
-        
+
         logger.debug(f"Attribution matching: {len(results)} families, top match: {top_results[0] if top_results else 'none'}")
-        
+
         return top_results
 
     def add_sample(self, family_name: str, features: Dict[str, float]) -> bool:
@@ -144,7 +146,7 @@ class AttributionIndex:
                 if f["name"] == family_name:
                     family = f
                     break
-            
+
             if family is None:
                 # Create new family
                 family = {
@@ -159,23 +161,23 @@ class AttributionIndex:
                 # Update existing family with incremental averaging
                 n = family.get("sample_count", 0)
                 current_features = family.get("features_mean", {})
-                
+
                 for key, value in features.items():
                     if key in current_features:
                         # Incremental average: new_avg = old_avg + (new_value - old_avg) / (n + 1)
                         current_features[key] += (value - current_features[key]) / (n + 1)
                     else:
                         current_features[key] = value
-                
+
                 family["features_mean"] = current_features
                 family["sample_count"] = n + 1
                 family["last_updated"] = datetime.now().isoformat()
-                
+
                 logger.info(f"Updated attribution family {family_name}: {n + 1} samples")
-            
+
             self._save()
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to add sample to family {family_name}: {e}")
             return False
@@ -184,7 +186,7 @@ class AttributionIndex:
         """Get statistics about the attribution database"""
         families = self.db.get("families", [])
         total_samples = sum(f.get("sample_count", 0) for f in families)
-        
+
         return {
             "total_families": len(families),
             "total_samples": total_samples,

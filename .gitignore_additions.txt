@@ -1,0 +1,17 @@
+# additions to .gitignore for cleanup
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+outputs/
+backend/outputs/
+backend/remorph_backend.egg-info/
+backend/src/remorph_backend.egg-info/
+frontend/node_modules/
+.venv/
+.pytest_cache/
+backend/.pytest_cache/
+.DS_Store
+.env
+.env.sample
+.env.example

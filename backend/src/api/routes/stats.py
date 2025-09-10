@@ -12,7 +12,7 @@ def get_stats():
     try:
         attribution_idx = AttributionIndex(FINGERPRINTS_PATH)
         stats = attribution_idx.get_family_stats()
-        
+
         return {
             "attribution": stats,
             "system": {
@@ -20,7 +20,7 @@ def get_stats():
                 "total_families": stats["total_families"]
             }
         }
-        
+
     except Exception as e:
         log_error(logger, e, "stats retrieval")
         raise HTTPException(status_code=500, detail="Failed to retrieve stats")
@@ -31,12 +31,12 @@ def get_families():
     try:
         attribution_idx = AttributionIndex(FINGERPRINTS_PATH)
         families = attribution_idx.all_families()
-        
+
         return {
             "families": families,
             "count": len(families)
         }
-        
+
     except Exception as e:
         log_error(logger, e, "families retrieval")
         raise HTTPException(status_code=500, detail="Failed to retrieve families")

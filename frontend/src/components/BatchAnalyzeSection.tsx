@@ -12,7 +12,7 @@ interface BatchResult {
     success: boolean;
     face_found?: boolean;
     face_confidence?: number;
-    heuristic_score?: number;
+  deep_model_score?: number;
     features?: Record<string, number>;
     torch_available?: boolean;
     torch_probs?: number[];
@@ -89,15 +89,15 @@ const BatchAnalyzeSection: React.FC = () => {
   const exportResults = () => {
     if (!result) return;
     
-    const csvContent = [
-      ['Image ID', 'Success', 'Face Found', 'Face Confidence', 'Heuristic Score', 'Risk Level', 'Error'].join(','),
+      const csvContent = [
+      ['Image ID', 'Success', 'Face Found', 'Face Confidence', 'Deep Model Score', 'Risk Level', 'Error'].join(','),
       ...result.results.map(r => [
         r.id,
         r.success,
         r.face_found || false,
         r.face_confidence ? (r.face_confidence * 100).toFixed(1) + '%' : 'N/A',
-        r.heuristic_score ? r.heuristic_score.toFixed(3) : 'N/A',
-        r.heuristic_score ? getScoreLabel(r.heuristic_score) : 'N/A',
+        r.deep_model_score ? r.deep_model_score.toFixed(3) : 'N/A',
+        r.deep_model_score ? getScoreLabel(r.deep_model_score) : 'N/A',
         r.error || ''
       ].join(','))
     ].join('\n');
@@ -230,7 +230,7 @@ const BatchAnalyzeSection: React.FC = () => {
               </div>
               <div className="text-center">
                 <p className="text-2xl font-bold text-danger-600">
-                  {result.results.filter(r => r.success && r.heuristic_score && r.heuristic_score > 0.7).length}
+                  {result.results.filter(r => r.success && r.deep_model_score && r.deep_model_score > 0.7).length}
                 </p>
                 <p className="text-sm text-gray-600">High Risk</p>
               </div>
@@ -277,19 +277,19 @@ const BatchAnalyzeSection: React.FC = () => {
                           </p>
                         </div>
                       )}
-                      {item.heuristic_score !== undefined && (
+          {item.deep_model_score !== undefined && (
                         <div>
-                          <span className="text-gray-600">Risk Level</span>
-                          <p className={`font-medium ${getScoreColor(item.heuristic_score)}`}>
-                            {getScoreLabel(item.heuristic_score)}
+          <span className="text-gray-600">Risk Level</span>
+          <p className={`font-medium ${getScoreColor(item.deep_model_score)}`}>
+            {getScoreLabel(item.deep_model_score)}
                           </p>
                         </div>
                       )}
-                      {item.heuristic_score !== undefined && (
+          {item.deep_model_score !== undefined && (
                         <div>
                           <span className="text-gray-600">Score</span>
                           <p className="font-medium text-gray-900">
-                            {item.heuristic_score.toFixed(3)}
+            {item.deep_model_score.toFixed(3)}
                           </p>
                         </div>
                       )}

@@ -1,7 +1,6 @@
 import os
 import psutil
 from datetime import datetime
-import psutil
 from fastapi import APIRouter
 from src.config import OUTPUT_DIR, FINGERPRINTS_PATH, WEIGHTS_PATH
 from src.utils.logging import setup_logger
@@ -16,12 +15,12 @@ def health():
         # Check system resources
         memory = psutil.virtual_memory()
         disk = psutil.disk_usage('/')
-        
+
         # Check file system
         output_exists = os.path.exists(OUTPUT_DIR)
         fingerprints_exist = os.path.exists(FINGERPRINTS_PATH)
         weights_exist = os.path.exists(WEIGHTS_PATH)
-        
+
         # Check face detection availability
         face_detector_available = False
         try:
@@ -29,7 +28,7 @@ def health():
             face_detector_available = face_detector._available
         except Exception:
             pass
-        
+
         health_data = {
             "status": "healthy",
             "timestamp": datetime.now().isoformat(),
@@ -50,10 +49,10 @@ def health():
                 "weights": WEIGHTS_PATH
             }
         }
-        
+
         logger.debug("Health check completed successfully")
         return health_data
-        
+
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return {
@@ -67,20 +66,20 @@ def detailed_health():
     """Detailed health check with component testing"""
     try:
         from datetime import datetime
-        
+
         results = {
             "timestamp": datetime.now().isoformat(),
             "components": {}
         }
-        
-        # Test heuristic detector
+
+    # Test availability of the deep model detector
         try:
-            from src.models.detector import HeuristicDetector
-            detector = HeuristicDetector()
-            results["components"]["heuristic_detector"] = "available"
+            from src.models.deep_model_detector import DeepModelDetector
+            detector = DeepModelDetector()
+            results["components"]["deep_model_detector"] = "available" if detector.available else "model_not_available"
         except Exception as e:
-            results["components"]["heuristic_detector"] = f"error: {str(e)}"
-        
+            results["components"]["deep_model_detector"] = f"error: {str(e)}"
+
         # Test torch detector
         try:
             from src.models.detector import TorchDetector
@@ -88,7 +87,7 @@ def detailed_health():
             results["components"]["torch_detector"] = "available" if torch_det.available else "weights_not_found"
         except Exception as e:
             results["components"]["torch_detector"] = f"error: {str(e)}"
-        
+
         # Test attribution index
         try:
             from src.trace.attribution import AttributionIndex
@@ -97,9 +96,9 @@ def detailed_health():
             results["components"]["attribution_index"] = f"available ({len(families)} families)"
         except Exception as e:
             results["components"]["attribution_index"] = f"error: {str(e)}"
-        
+
         return results
-        
+
     except Exception as e:
         logger.error(f"Detailed health check failed: {e}")
         return {"error": str(e), "timestamp": datetime.now().isoformat()}

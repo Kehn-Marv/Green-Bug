@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-backend:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+    env:
+      REDIS_URL: redis://localhost:6379/0
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 2s --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Run backend tests
+        working-directory: backend
+        run: |
+          pytest -q
+
+      - name: Run Redis-backed job store test
+        working-directory: backend
+        env:
+          REDIS_URL: ${{ env.REDIS_URL }}
+        run: |
+          pytest -q tests/test_redis_job_store.py -q
+
+  test-redis:
+    runs-on: ubuntu-latest
+    needs: test-backend
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 2s --health-retries 5
+    env:
+      REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install backend deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+      - name: Run Redis-backed tests (strict)
+        working-directory: backend
+        env:
+          REDIS_URL: ${{ env.REDIS_URL }}
+        run: |
+          pytest -q tests/test_redis_job_store.py -q
+          pip install -r backend/requirements.txt
+
+      - name: Run backend tests
+        working-directory: backend
+        run: |
+          pytest -q

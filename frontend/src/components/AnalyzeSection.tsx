@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Upload, Image as ImageIcon, AlertCircle, CheckCircle, Download, Eye, Database, FileText, Brain, Shield, Zap } from 'lucide-react';
-import { analyzeImage } from '../services/api';
+import { analyzeImage, submitAnalyze, getAnalyzeResult, openAnalyzeEvents } from '../services/api';
 import LoadingSpinner from './LoadingSpinner';
 import ResultCard from './ResultCard';
 import ImageViewer from './ImageViewer';
@@ -18,8 +18,7 @@ interface AnalysisResult {
     flags: any;
   };
   scores: {
-    heuristic_deepfake_score: number;
-    deep_model_score?: number;
+  deep_model_score: number;
   };
   features: Record<string, number>;
   attribution_topk: Array<{
@@ -43,6 +42,7 @@ interface AnalysisResult {
   };
   comprehensive_features: any;
   forensic_reports?: any;
+  processing_metadata?: Record<string, any>;
   files: {
     heatmap_url: string;
     overlay_url: string;
@@ -54,7 +54,11 @@ const AnalyzeSection: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [polling, setPolling] = useState(false);
+  const [jobProgress, setJobProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const eventHandleRef = useRef<{ close: () => void } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [viewerImage, setViewerImage] = useState<{ url: string; title: string } | null>(null);
@@ -92,14 +96,84 @@ const AnalyzeSection: React.FC = () => {
     setError(null);
 
     try {
-      const analysisResult = await analyzeImage(selectedFile, analysisOptions);
-      setResult(analysisResult);
+      // Submit job and poll for result to support long-running processing
+      setError(null);
+      setResult(null);
+      const submitResp = await submitAnalyze(selectedFile, analysisOptions);
+      const jid = String(submitResp.job_id);
+      setJobId(jid);
+      setPolling(true);
+
+      // Open SSE stream for live progress updates (optional fallback to polling remains)
+      try {
+        const es = openAnalyzeEvents(jid, (data: any) => {
+          if (data && typeof data.progress === 'number') {
+            setJobProgress(data.progress);
+          }
+          if (data && data.status === 'completed' && data.result) {
+            setResult(data.result as AnalysisResult);
+            setPolling(false);
+            setJobId(null);
+            // Close stream
+            try { es.close(); } catch (e) {}
+          }
+          if (data && data.status === 'failed') {
+            setError(data.message || 'Analysis failed');
+            setPolling(false);
+            setJobId(null);
+            try { es.close(); } catch (e) {}
+          }
+        });
+        
+      } catch (e) {
+        // ignore SSE errors; polling will continue
+      }
+
+      // Open SSE stream for live progress updates (SSE is primary transport)
+      try {
+        const handle = openAnalyzeEvents(jid, (data: any) => {
+          if (data && typeof data.progress === 'number') {
+            setJobProgress(data.progress);
+          }
+          if (data && data.status === 'completed' && data.result) {
+            setResult(data.result as AnalysisResult);
+            setPolling(false);
+            setJobId(null);
+            // close connection
+            try { eventHandleRef.current?.close(); } catch (e) {}
+            eventHandleRef.current = null;
+          }
+          if (data && data.status === 'failed') {
+            setError(data.error || data.message || 'Analysis failed');
+            setPolling(false);
+            setJobId(null);
+            try { eventHandleRef.current?.close(); } catch (e) {}
+            eventHandleRef.current = null;
+          }
+        });
+        eventHandleRef.current = handle;
+      } catch (e) {
+        setError('Failed to open progress stream; please try again.');
+        setPolling(false);
+        setJobId(null);
+      }
     } catch (err: any) {
       setError(err.message || 'Analysis failed. Please try again.');
     } finally {
-      setIsAnalyzing(false);
+      // Ensure SSE closed
+      try { eventHandleRef.current?.close(); } catch (e) {}
+      eventHandleRef.current = null;
+  setIsAnalyzing(false);
     }
   };
+
+  // Cleanup on unmount
+  React.useEffect(() => {
+    return () => {
+      try { eventHandleRef.current?.close(); } catch (e) {}
+      eventHandleRef.current = null;
+    };
+  }, []);
 
   const downloadImage = async (url: string, filename: string) => {
     try {
@@ -134,6 +208,8 @@ const AnalyzeSection: React.FC = () => {
     if (score < 0.7) return 'Medium Risk';
     return 'High Risk';
   };
+  // canonical deep_model_score
+  const modelScore = result ? (result.scores.deep_model_score ?? 0) : 0;
 
   return (
     <div className="space-y-6">
@@ -266,8 +342,28 @@ const AnalyzeSection: React.FC = () => {
         </div>
       )}
 
-      {/* Results */}
-      {result && (
+      {/* Job polling indicator */}
+      {polling && jobId && (
+        <div className="card border-yellow-200 bg-yellow-50">
+          <div className="flex items-center space-x-3">
+            <Database className="w-5 h-5 text-yellow-600" />
+            <div>
+              <p className="text-yellow-700">Analysis submitted (job {jobId}). Processing in background...</p>
+              {jobProgress !== null && (
+                <div className="w-64 mt-2">
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div className="bg-primary-500 h-2 rounded-full" style={{ width: `${jobProgress}%` }} />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">{jobProgress}%</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+  {/* Results */}
+  {result && (
         <div className="space-y-6">
           {/* Enhanced Main Results */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -276,47 +372,24 @@ const AnalyzeSection: React.FC = () => {
               <div className="space-y-4">
                 <div>
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium text-gray-700">Heuristic Score</span>
-                    <span className={`text-sm font-bold ${getScoreColor(result.scores.heuristic_deepfake_score)}`}>
-                      {getScoreLabel(result.scores.heuristic_deepfake_score)}
+                    <span className="text-sm font-medium text-gray-700">Deep Model Score</span>
+                    <span className={`text-sm font-bold ${getScoreColor(modelScore)}`}>
+                      {getScoreLabel(modelScore)}
                     </span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
                       className={`h-2 rounded-full ${
-                        result.scores.heuristic_deepfake_score < 0.3 ? 'bg-success-500' :
-                        result.scores.heuristic_deepfake_score < 0.7 ? 'bg-yellow-500' : 'bg-danger-500'
+                        modelScore < 0.3 ? 'bg-success-500' :
+                        modelScore < 0.7 ? 'bg-yellow-500' : 'bg-danger-500'
                       }`}
-                      style={{ width: `${result.scores.heuristic_deepfake_score * 100}%` }}
+                      style={{ width: `${modelScore * 100}%` }}
                     />
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    {(result.scores.heuristic_deepfake_score * 100).toFixed(1)}% confidence
+                    {(modelScore * 100).toFixed(1)}% confidence
                   </p>
                 </div>
-
-                {result.scores.deep_model_score && (
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-sm font-medium text-gray-700">Deep Model Score</span>
-                      <span className={`text-sm font-bold ${getScoreColor(result.scores.deep_model_score)}`}>
-                        {getScoreLabel(result.scores.deep_model_score)}
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div
-                        className={`h-2 rounded-full ${
-                          result.scores.deep_model_score < 0.3 ? 'bg-success-500' :
-                          result.scores.deep_model_score < 0.7 ? 'bg-yellow-500' : 'bg-danger-500'
-                        }`}
-                        style={{ width: `${result.scores.deep_model_score * 100}%` }}
-                      />
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {(result.scores.deep_model_score * 100).toFixed(1)}% confidence
-                    </p>
-                  </div>
-                )}
               </div>
             </ResultCard>
 
@@ -328,19 +401,19 @@ const AnalyzeSection: React.FC = () => {
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600">Predicted Family</span>
                       <span className="text-sm font-medium text-gray-900 capitalize">
-                        {result.attribution.predicted_family.replace(/_/g, ' ')}
+                        {String(result.attribution.predicted_family || 'Unknown').replace(/_/g, ' ')}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600">Confidence</span>
                       <span className="text-sm font-medium text-gray-900">
-                        {(result.attribution.confidence * 100).toFixed(1)}%
+                        {typeof result.attribution.confidence === 'number' ? `${(result.attribution.confidence * 100).toFixed(1)}%` : 'N/A'}
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
                         className="bg-primary-500 h-2 rounded-full"
-                        style={{ width: `${result.attribution.confidence * 100}%` }}
+                        style={{ width: `${(result.attribution.confidence || 0) * 100}%` }}
                       />
                     </div>
                   </>
@@ -441,23 +514,23 @@ const AnalyzeSection: React.FC = () => {
           </div>
 
           {/* Legacy Attribution Results */}
-          {result.attribution_topk && result.attribution_topk.length > 0 && (
+                {result.attribution_topk && result.attribution_topk.length > 0 && (
             <ResultCard title="Legacy Attribution Analysis" icon={Database}>
               <div className="space-y-3">
                 {result.attribution_topk.map((attr, index) => (
                   <div key={index} className="flex items-center justify-between">
                     <span className="text-sm text-gray-700 capitalize">
-                      {attr.family.replace(/_/g, ' ')}
+                      {String(attr.family || 'unknown').replace(/_/g, ' ')}
                     </span>
                     <div className="flex items-center space-x-2">
                       <div className="w-20 bg-gray-200 rounded-full h-1.5">
                         <div
                           className="bg-primary-500 h-1.5 rounded-full"
-                          style={{ width: `${Math.max(attr.similarity * 100, 5)}%` }}
+                          style={{ width: `${Math.max((attr.similarity || 0) * 100, 5)}%` }}
                         />
                       </div>
                       <span className="text-sm font-medium text-gray-900 w-12 text-right">
-                        {(attr.similarity * 100).toFixed(0)}%
+                        {( (attr.similarity || 0) * 100).toFixed(0)}%
                       </span>
                     </div>
                   </div>
@@ -467,7 +540,7 @@ const AnalyzeSection: React.FC = () => {
           )}
 
           {/* Forensic Reports */}
-          {result.forensic_reports && (
+                {result.forensic_reports && (
             <ResultCard title="Forensic Reports" icon={FileText}>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {result.forensic_reports.json && (
@@ -475,7 +548,7 @@ const AnalyzeSection: React.FC = () => {
                     <FileText className="w-8 h-8 text-primary-600 mx-auto mb-2" />
                     <p className="text-sm font-medium text-gray-900">Technical Report (JSON)</p>
                     <button
-                      onClick={() => window.open(`/api/files/${result.forensic_reports.json.split('/').pop()}`, '_blank')}
+                      onClick={() => window.open(`/api/files/${String(result.forensic_reports.json).split('/').pop()}`, '_blank')}
                       className="btn-secondary mt-2 w-full"
                     >
                       Download
@@ -487,7 +560,7 @@ const AnalyzeSection: React.FC = () => {
                     <FileText className="w-8 h-8 text-success-600 mx-auto mb-2" />
                     <p className="text-sm font-medium text-gray-900">Web Report (HTML)</p>
                     <button
-                      onClick={() => window.open(`/api/files/${result.forensic_reports.html.split('/').pop()}`, '_blank')}
+                      onClick={() => window.open(`/api/files/${String(result.forensic_reports.html).split('/').pop()}`, '_blank')}
                       className="btn-secondary mt-2 w-full"
                     >
                       View
@@ -499,7 +572,7 @@ const AnalyzeSection: React.FC = () => {
                     <FileText className="w-8 h-8 text-danger-600 mx-auto mb-2" />
                     <p className="text-sm font-medium text-gray-900">Forensic Report (PDF)</p>
                     <button
-                      onClick={() => window.open(`/api/files/${result.forensic_reports.pdf.split('/').pop()}`, '_blank')}
+                      onClick={() => window.open(`/api/files/${String(result.forensic_reports.pdf).split('/').pop()}`, '_blank')}
                       className="btn-secondary mt-2 w-full"
                     >
                       Download
@@ -579,7 +652,7 @@ const AnalyzeSection: React.FC = () => {
             <div className="space-y-6">
               {/* Legacy Features */}
               <div>
-                <h4 className="font-medium text-gray-900 mb-3">Legacy Heuristic Features</h4>
+                <h4 className="font-medium text-gray-900 mb-3">Extracted Features</h4>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                   {Object.entries(result.features).map(([key, value]) => (
                     <div key={key} className="space-y-1">

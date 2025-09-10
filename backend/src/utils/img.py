@@ -9,7 +9,6 @@ def to_pil(arr):
     if isinstance(arr, Image.Image):
         return arr
     from PIL import Image
-    import numpy as np
     arr = arr.astype("uint8")
     return Image.fromarray(arr)
 
