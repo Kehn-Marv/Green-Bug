@@ -708,5 +708,3 @@ async def analyze_batch(files: List[UploadFile] = File(...)):
     except Exception as e:
         log_error(logger, e, "batch analysis")
         raise HTTPException(status_code=500, detail="Batch analysis failed")
-
-from datetime import datetime
