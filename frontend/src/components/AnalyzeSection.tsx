@@ -66,7 +66,8 @@ const AnalyzeSection: React.FC = () => {
     stripExif: true,
     enableLearning: true,
     generateReport: false,
-    targetLayer: 'layer4.1.conv2'
+    targetLayer: 'layer4.1.conv2',
+    timeout: 120000 // 2 minutes timeout
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -99,12 +100,13 @@ const AnalyzeSection: React.FC = () => {
       // Submit job and poll for result to support long-running processing
       setError(null);
       setResult(null);
+      setJobProgress(0);
       const submitResp = await submitAnalyze(selectedFile, analysisOptions);
       const jid = String(submitResp.job_id);
       setJobId(jid);
       setPolling(true);
 
-      // Open SSE stream for live progress updates (optional fallback to polling remains)
+      // Open SSE stream for live progress updates
       try {
         const es = openAnalyzeEvents(jid, (data: any) => {
           if (data && typeof data.progress === 'number') {
@@ -114,56 +116,58 @@ const AnalyzeSection: React.FC = () => {
             setResult(data.result as AnalysisResult);
             setPolling(false);
             setJobId(null);
-            // Close stream
-            try { es.close(); } catch (e) {}
-          }
-          if (data && data.status === 'failed') {
-            setError(data.message || 'Analysis failed');
-            setPolling(false);
-            setJobId(null);
-            try { es.close(); } catch (e) {}
-          }
-        });
-        
-      } catch (e) {
-        // ignore SSE errors; polling will continue
-      }
-
-      // Open SSE stream for live progress updates (SSE is primary transport)
-      try {
-        const handle = openAnalyzeEvents(jid, (data: any) => {
-          if (data && typeof data.progress === 'number') {
-            setJobProgress(data.progress);
-          }
-          if (data && data.status === 'completed' && data.result) {
-            setResult(data.result as AnalysisResult);
-            setPolling(false);
-            setJobId(null);
-            // close connection
-            try { eventHandleRef.current?.close(); } catch (e) {}
-            eventHandleRef.current = null;
+            setJobProgress(null);
           }
           if (data && data.status === 'failed') {
             setError(data.error || data.message || 'Analysis failed');
             setPolling(false);
             setJobId(null);
-            try { eventHandleRef.current?.close(); } catch (e) {}
-            eventHandleRef.current = null;
+            setJobProgress(null);
           }
         });
-        eventHandleRef.current = handle;
+        eventHandleRef.current = es;
       } catch (e) {
-        setError('Failed to open progress stream; please try again.');
-        setPolling(false);
-        setJobId(null);
+        // Fallback to polling if SSE fails
+        console.warn('SSE failed, falling back to polling:', e);
+        const pollInterval = setInterval(async () => {
+          try {
+            const pollResult = await getAnalyzeResult(jid);
+            if (pollResult.status === 'completed' && pollResult.result) {
+              setResult(pollResult.result as AnalysisResult);
+              setPolling(false);
+              setJobId(null);
+              setJobProgress(null);
+              clearInterval(pollInterval);
+            } else if (pollResult.status === 'failed') {
+              setError(pollResult.error || 'Analysis failed');
+              setPolling(false);
+              setJobId(null);
+              setJobProgress(null);
+              clearInterval(pollInterval);
+            }
+          } catch (pollError) {
+            console.error('Polling error:', pollError);
+          }
+        }, 2000);
+        
+        // Cleanup polling after 5 minutes
+        setTimeout(() => {
+          clearInterval(pollInterval);
+          if (polling) {
+            setError('Analysis timeout - please try again');
+            setPolling(false);
+            setJobId(null);
+            setJobProgress(null);
+          }
+        }, 300000);
       }
     } catch (err: any) {
       setError(err.message || 'Analysis failed. Please try again.');
+        setPolling(false);
+        setJobId(null);
+        setJobProgress(null);
     } finally {
-      // Ensure SSE closed
-      try { eventHandleRef.current?.close(); } catch (e) {}
-      eventHandleRef.current = null;
-  setIsAnalyzing(false);
+      setIsAnalyzing(false);
     }
   };
 

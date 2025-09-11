@@ -2,12 +2,11 @@ import axios from 'axios';
 
 // Use a relative base so Vite dev server proxy (configured in vite.config.ts)
 // forwards requests to the backend during development.
-const API_BASE_URL = '/api';
+const API_BASE_URL = import.meta.env.PROD ? '/api' : '/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  // Keep a sensible default for general requests but allow longer requests
-  timeout: 30000, // 30 seconds default timeout
+  timeout: 60000, // 60 seconds default timeout for comprehensive analysis
 });
 
 // Health endpoints
@@ -94,7 +93,8 @@ export const getAnalyzeResult = async (jobId: string) => {
 
 // SSE helper to open EventSource for job progress
 export const openAnalyzeEvents = (jobId: string, onMessage: (data: any) => void, onOpen?: () => void, onClose?: () => void) => {
-  const url = `${api.defaults.baseURL}/analyze/events/${jobId}`;
+  const baseUrl = api.defaults.baseURL || '';
+  const url = `${baseUrl}/analyze/events/${jobId}`;
 
   let es: EventSource | null = null;
   let closed = false;
@@ -102,27 +102,40 @@ export const openAnalyzeEvents = (jobId: string, onMessage: (data: any) => void,
 
   const connect = () => {
     if (closed) return;
+    
     es = new EventSource(url);
+    
     es.onopen = () => {
       attempt = 0;
-      onOpen && onOpen();
+      if (onOpen) onOpen();
     };
+    
     es.onmessage = (e: MessageEvent) => {
       try {
-        onMessage(JSON.parse(e.data));
+        const data = JSON.parse(e.data);
+        onMessage(data);
       } catch (err) {
-        // ignore parse errors
+        console.warn('Failed to parse SSE message:', err);
       }
     };
+    
     es.onerror = () => {
-      // Close current and try reconnect with backoff
-      try { es?.close(); } catch (e) {}
+      if (es) {
+        try { es.close(); } catch (e) {}
+      }
       es = null;
+      
       if (closed) return;
-      // backoff
+      
+      // Exponential backoff for reconnection
       attempt += 1;
-      const backoff = Math.min(30000, 500 * Math.pow(2, attempt));
-      setTimeout(() => connect(), backoff);
+      if (attempt <= 5) {
+        const backoff = Math.min(10000, 1000 * Math.pow(2, attempt));
+        setTimeout(() => connect(), backoff);
+      } else {
+        console.error('SSE connection failed after 5 attempts');
+        if (onClose) onClose();
+      }
     };
   };
 
@@ -131,8 +144,10 @@ export const openAnalyzeEvents = (jobId: string, onMessage: (data: any) => void,
   return {
     close: () => {
       closed = true;
-      try { es?.close(); } catch (e) {}
-      onClose && onClose();
+      if (es) {
+        try { es.close(); } catch (e) {}
+      }
+      if (onClose) onClose();
     }
   };
 };

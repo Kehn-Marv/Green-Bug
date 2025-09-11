@@ -658,9 +658,8 @@ def set_attribution_engine(obj: AttributionEngine):
     global _attribution_engine
     _attribution_engine = obj
 
-def set_robustness_tester(obj: RobustnessTester):
+def set_robustness_tester(obj):
     global _robustness_tester
-    _robustness_tester = obj
 
 def set_self_learning_system(obj: SelfLearningSystem):
     global _self_learning_system

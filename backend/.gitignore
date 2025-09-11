@@ -1,2 +1,12 @@
-node_modules/
+# Backend specific ignores
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+outputs/
+weights/
+*.pt
+*.pth
 .env
+.venv/

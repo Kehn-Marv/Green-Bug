@@ -5,10 +5,11 @@ import {
   Activity, 
   BarChart3, 
   Database,
-  Stethoscope
+  Stethoscope,
+  GraduationCap
 } from 'lucide-react';
 
-type ActiveSection = 'analyze' | 'batch' | 'health' | 'stats' | 'families';
+type ActiveSection = 'analyze' | 'batch' | 'health' | 'stats' | 'families' | 'learning';
 
 interface NavigationProps {
   activeSection: ActiveSection;
@@ -32,31 +33,38 @@ const Navigation: React.FC<NavigationProps> = ({ activeSection, onSectionChange 
       priority: 2
     },
     {
+      id: 'learning' as const,
+      label: 'Self-Learning',
+      icon: GraduationCap,
+      description: 'Manage learning candidates and consent',
+      priority: 3
+    },
+    {
       id: 'health' as const,
       label: 'System Health',
       icon: Stethoscope,
       description: 'Check system status and component health',
-      priority: 3
+      priority: 4
     },
     {
       id: 'stats' as const,
       label: 'Statistics',
       icon: BarChart3,
       description: 'View system and attribution statistics',
-      priority: 4
+      priority: 5
     },
     {
       id: 'families' as const,
       label: 'Attribution Families',
       icon: Database,
       description: 'Explore deepfake generation families',
-      priority: 5
+      priority: 6
     }
   ];
 
   return (
     <nav className="bg-white rounded-xl shadow-sm border border-gray-200 p-2">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeSection === item.id;

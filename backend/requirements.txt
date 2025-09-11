@@ -17,3 +17,4 @@ opencv-python
 redis>=4.6.0
 pytest-asyncio
 transformers>=4.0.0
+pytest>=7.0.0
